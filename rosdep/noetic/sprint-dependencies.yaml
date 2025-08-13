@@ -1,0 +1,40 @@
+alglib:
+  ubuntu: [ros-noetic-alglib]
+arrc_cv_common:
+  ubuntu: [ros-noetic-arrc-cv-common]
+arrc_custom_msgs:
+  ubuntu: [ros-noetic-arrc-custom-msgs]
+patchwork:
+  ubuntu: [ros-noetic-patchwork]
+ugv_detection:
+  ubuntu: [ros-noetic-ugv-detection]
+ugv_driveable_region_detection:
+  ubuntu: [ros-noetic-ugv-driveable-region-detection]
+ugv_fusion:
+  ubuntu: [ros-noetic-ugv-fusion]
+ugv_multi_object_tracker:
+  ubuntu: [ros-noetic-ugv-multi-object-tracker]
+ugv_perception:
+  ubuntu: [ros-noetic-ugv-perception]
+ugv_segmentation:
+  ubuntu: [ros-noetic-ugv-segmentation]
+ugv_gui:
+  ubuntu: [ros-noetic-ugv-gui]
+ugv_common:
+  ubuntu: [ros-noetic-ugv-common]
+ugv_os:
+  ubuntu: [ros-noetic-ugv-os]
+ugv_decision_making:
+  ubuntu: [ros-noetic-ugv-decision-making]
+ugv_route_planner:
+  ubuntu: [ros-noetic-ugv-route-planner]
+ugv_trajectory_generator:
+  ubuntu: [ros-noetic-ugv-trajectory-generator]
+ugv_base_local_planner:
+  ubuntu: [ros-noetic-ugv-base-local-planner]
+ugv_base_path_planner:
+  ubuntu: [ros-noetic-ugv-base-path-planner]
+ugv_trailer_pose_estimation:
+  ubuntu: [ros-noetic-ugv-trailer-pose-estimation]
+ugv_ompl_path_planner:
+  ubuntu: [ros-noetic-ugv-ompl-path-planner]
