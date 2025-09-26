@@ -4,6 +4,8 @@ arrc_cv_common:
   ubuntu: [ros-noetic-arrc-cv-common]
 arrc_custom_msgs:
   ubuntu: [ros-noetic-arrc-custom-msgs]
+ugv_diagnostics:
+  ubuntu: [ros-noetic-ugv-diagnostics]
 patchwork:
   ubuntu: [ros-noetic-patchwork]
 ugv_detection:
