@@ -89,7 +89,7 @@ xclean() {
 }
 
 
-xunittest() {
+xoldunittest() {
   if [ -z "$1" ]; then
     echo "Usage: xunittest <package_name>"
     return 1
@@ -102,6 +102,379 @@ xunittest() {
 #   colcon test-result --verbose --all
   script -q -c "colcon test-result --verbose --all" /dev/null
 
+}
+# sudo apt-get install lcov
+ x222unittest() {
+    if [ -z "$1" ]; then
+      echo "Usage: xunittest <package_name> [--coverage]"
+      return 1
+    fi
+
+    local pkg="$1"
+    local do_coverage=false
+
+    # Check if coverage flag is provided
+    if [ "$2" == "--coverage" ]; then
+      do_coverage=true
+      echo "Building with coverage enabled..."
+    fi
+
+    # Set build type and flags based on coverage
+    local build_type="Release"
+    local cmake_args="-DCMAKE_BUILD_TYPE=$build_type -DCATKIN_ENABLE_TESTING=ON"
+
+    if [ "$do_coverage" = true ]; then
+      build_type="Debug"
+      # Add -fprofile-arcs -ftest-coverage for branch coverage
+      cmake_args="-DCMAKE_BUILD_TYPE=$build_type -DCMAKE_CXX_FLAGS='-O0 -g -fprofile-arcs -ftest-coverage' -DCMAKE_C_FLAGS='-O0 -g -fprofile-arcs -ftest-coverage' 
+  -DCMAKE_EXE_LINKER_FLAGS='-lgcov'"
+    fi
+
+    # Build and test
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args $cmake_args && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+
+    # Generate coverage report if requested
+    if [ "$do_coverage" = true ] && [ $? -eq 0 ]; then
+      echo ""
+      echo "=== Generating coverage report ==="
+      local build_dir="build/$pkg"
+
+      # Check if lcov is installed
+      if ! command -v lcov &> /dev/null; then
+        echo "ERROR: lcov not installed. Install with: sudo apt-get install lcov"
+        return 1
+      fi
+
+      cd "$build_dir" || return 1
+
+      # Capture coverage data WITH branch coverage
+      echo "Capturing coverage data..."
+      lcov --capture --directory . --output-file coverage.info \
+        --rc lcov_branch_coverage=1 \
+        --ignore-errors mismatch,unused \
+        --quiet
+
+      # Filter out system and test files
+      echo "Filtering coverage data..."
+      lcov --remove coverage.info \
+        '/usr/*' '/opt/*' '*/test/*' '*/gtest/*' '*/_deps/*' '*/build/*' \
+        --output-file coverage_filtered.info \
+        --rc lcov_branch_coverage=1 \
+        --ignore-errors unused,empty \
+        --quiet
+
+      # Generate HTML report
+      echo "Generating HTML report..."
+      genhtml coverage_filtered.info \
+        --output-directory coverage_html \
+        --rc lcov_branch_coverage=1 \
+        --ignore-errors source \
+        --quiet
+
+      # Print summary
+      echo ""
+      echo "=== Coverage Summary ==="
+      lcov --summary coverage_filtered.info --rc lcov_branch_coverage=1 2>/dev/null
+
+      # Print report location
+      local full_path="$(pwd)/coverage_html/index.html"
+      echo ""
+      echo "HTML Coverage Report: file://$full_path"
+      echo ""
+
+      cd - > /dev/null
+    fi
+}
+
+#-fno-exceptions
+x3333unittest() {
+  if [ -z "$1" ]; then
+    echo "Usage: xunittest <package_name> [--coverage]"
+    return 1
+  fi
+
+  local pkg="$1"
+  local do_coverage=false
+
+  if [ "$2" == "--coverage" ]; then
+    do_coverage=true
+    echo "Building with coverage enabled..."
+  fi
+
+  local build_type="Release"
+
+  if [ "$do_coverage" = true ]; then
+    build_type="Debug"
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args \
+        -DCMAKE_BUILD_TYPE=$build_type \
+        -DCATKIN_ENABLE_TESTING=ON \
+        "-DCMAKE_CXX_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+        "-DCMAKE_C_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+        "-DCMAKE_EXE_LINKER_FLAGS=-lgcov" && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+  else
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args \
+        -DCMAKE_BUILD_TYPE=$build_type \
+        -DCATKIN_ENABLE_TESTING=ON && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+  fi
+
+  if [ "$do_coverage" = true ] && [ $? -eq 0 ]; then
+    echo ""
+    echo "=== Generating coverage report ==="
+    local build_dir="build/$pkg"
+
+    if ! command -v lcov &> /dev/null; then
+      echo "ERROR: lcov not installed. Install with: sudo apt-get install lcov"
+      return 1
+    fi
+
+    cd "$build_dir" || return 1
+
+    echo "Capturing coverage data..."
+    lcov --capture --directory . --output-file coverage.info --rc branch_coverage=1 --rc geninfo_unexecuted_blocks=1 --ignore-errors mismatch,unused,gcov --quiet 2>/dev/null
+
+    echo "Filtering coverage data..."
+    lcov --remove coverage.info '/usr/*' '/opt/*' '*/test/*' '*/gtest/*' '*/_deps/*' '*/build/*' '*/install/*' --output-file coverage_filtered.info --rc branch_coverage=1 --ignore-errors unused,empty --quiet
+
+    # Extract only source files from the current package (src and include directories)
+    local workspace_root="$(cd ../.. && pwd)"
+    local src_pattern="${workspace_root}/src/**/${pkg}/src/*"
+    local include_pattern="${workspace_root}/src/**/${pkg}/include/*"
+    lcov --extract coverage_filtered.info "${src_pattern}" "${include_pattern}" --output-file coverage_pkg_only.info --rc branch_coverage=1 --ignore-errors unused,empty 2>/dev/null
+
+    # Use package-only coverage if extraction succeeded, otherwise use filtered
+    local coverage_file="coverage_filtered.info"
+    if [ -f coverage_pkg_only.info ] && [ -s coverage_pkg_only.info ]; then
+      coverage_file="coverage_pkg_only.info"
+      echo "Using package-only coverage data"
+    fi
+
+    echo "Generating HTML report..."
+    genhtml "${coverage_file}" --output-directory coverage_html --rc branch_coverage=1 --ignore-errors source --quiet
+
+    echo ""
+    echo "=== Coverage Summary (Package Source Only) ==="
+    lcov --summary "${coverage_file}" --rc branch_coverage=1 2>/dev/null
+
+    local full_path="$(pwd)/coverage_html/index.html"
+    echo ""
+    echo "HTML Coverage Report: $full_path"
+    echo ""
+
+    cd - > /dev/null
+  fi
+}        
+
+x444unittest() {
+  if [ -z "$1" ]; then
+    echo "Usage: xunittest <package_name> [--coverage]"
+    return 1
+  fi
+
+  local pkg="$1"
+  local do_coverage=false
+
+  if [ "$2" == "--coverage" ]; then
+    do_coverage=true
+    echo "Building with coverage enabled..."
+  fi
+
+  local build_type="Release"
+
+  if [ "$do_coverage" = true ]; then
+    build_type="Debug"
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args \
+        -DCMAKE_BUILD_TYPE=$build_type \
+        -DCATKIN_ENABLE_TESTING=ON \
+        "-DCMAKE_CXX_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+        "-DCMAKE_C_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+        "-DCMAKE_EXE_LINKER_FLAGS=-lgcov" && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+  else
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args \
+        -DCMAKE_BUILD_TYPE=$build_type \
+        -DCATKIN_ENABLE_TESTING=ON && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+  fi
+
+  if [ "$do_coverage" = true ] && [ $? -eq 0 ]; then
+    echo ""
+    echo "=== Generating coverage report ==="
+    local build_dir="build/$pkg"
+
+    if ! command -v lcov &> /dev/null; then
+      echo "ERROR: lcov not installed. Install with: sudo apt-get install lcov"
+      return 1
+    fi
+
+    cd "$build_dir" || return 1
+
+    echo "Capturing coverage data..."
+    lcov --capture --directory . --output-file coverage.info --rc branch_coverage=1 --rc
+geninfo_unexecuted_blocks=1 --ignore-errors mismatch,unused,gcov --quiet 2>/dev/null
+
+    echo "Filtering coverage data..."
+    lcov --remove coverage.info '/usr/*' '/opt/*' '*/test/*' '*/gtest/*' '*/_deps/*' '*/build/*' '*/install/*' -
+-output-file coverage_filtered.info --rc branch_coverage=1 --ignore-errors unused,empty --quiet
+
+    # Extract only source files from the current package
+    local workspace_root="$(cd ../.. && pwd)"
+    local src_pattern="*/${pkg}/*"
+    lcov --extract coverage_filtered.info "${src_pattern}" --output-file coverage_pkg_only.info --rc
+branch_coverage=1 --ignore-errors unused,empty 2>/dev/null
+
+    # Use package-only coverage if extraction succeeded, otherwise use filtered
+    local coverage_file="coverage_filtered.info"
+    if [ -f coverage_pkg_only.info ] && [ -s coverage_pkg_only.info ]; then
+      coverage_file="coverage_pkg_only.info"
+      echo "Using package-only coverage data"
+    fi
+
+    echo "Generating HTML report..."
+    genhtml "${coverage_file}" --output-directory coverage_html --rc branch_coverage=1 --ignore-errors source -
+-quiet
+
+    echo ""
+    echo "=== Coverage Summary (Package Source Only) ==="
+    lcov --summary "${coverage_file}" --rc branch_coverage=1 2>/dev/null
+
+    local full_path="$(pwd)/coverage_html/index.html"
+    echo ""
+    echo "HTML Coverage Report: $full_path"
+    echo ""
+
+    cd - > /dev/null
+  fi
+}
+
+xunittest() {
+  if [ -z "$1" ]; then
+    echo "Usage: xunittest <package_name> [--coverage]"
+    return 1
+  fi
+
+  local pkg="$1"
+  local do_coverage=false
+
+  if [ "$2" == "--coverage" ]; then
+    do_coverage=true
+    echo "Building with coverage enabled..."
+  fi
+
+  local build_type="Release"
+
+  if [ "$do_coverage" = true ]; then
+    build_type="Debug"
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args \
+        -DCMAKE_BUILD_TYPE=$build_type \
+        -DCATKIN_ENABLE_TESTING=ON \
+        "-DCMAKE_CXX_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+        "-DCMAKE_C_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+        "-DCMAKE_EXE_LINKER_FLAGS=-lgcov" && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+  else
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+      --cmake-args \
+        -DCMAKE_BUILD_TYPE=$build_type \
+        -DCATKIN_ENABLE_TESTING=ON && \
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+  fi
+
+  if [ "$do_coverage" = true ] && [ $? -eq 0 ]; then
+    echo ""
+    echo "=== Generating coverage report ==="
+    local build_dir="build/$pkg"
+
+    if ! command -v lcov &> /dev/null; then
+      echo "ERROR: lcov not installed. Install with: sudo apt-get install lcov"
+      return 1
+    fi
+
+    cd "$build_dir" || return 1
+
+    echo "Capturing coverage data..."
+    lcov --capture --directory . --output-file coverage.info --rc branch_coverage=1 --rc
+geninfo_unexecuted_blocks=1 --ignore-errors mismatch,unused,gcov --quiet 2>/dev/null
+
+    echo "Filtering coverage data..."
+    lcov --remove coverage.info '/usr/*' '/opt/*' '*/test/*' '*/gtest/*' '*/_deps/*' '*/build/*' '*/install/*' -
+-output-file coverage_filtered.info --rc branch_coverage=1 --ignore-errors unused,empty --quiet
+
+    # Extract only source files from the current package (src and include directories)
+    local workspace_root="$(cd ../.. && pwd)"
+    local src_pattern="${workspace_root}/src/**/${pkg}/src/*"
+    local include_pattern="${workspace_root}/src/**/${pkg}/include/*"
+    lcov --extract coverage_filtered.info "${src_pattern}" "${include_pattern}" --output-file coverage_pkg_only.
+info --rc branch_coverage=1 --ignore-errors unused,empty 2>/dev/null
+
+    # Use package-only coverage if extraction succeeded, otherwise use filtered
+    local coverage_file="coverage_filtered.info"
+    if [ -f coverage_pkg_only.info ] && [ -s coverage_pkg_only.info ]; then
+      coverage_file="coverage_pkg_only.info"
+      echo "Using package-only coverage data"
+    fi
+
+    echo "Generating HTML report..."
+    genhtml "${coverage_file}" --output-directory coverage_html --rc branch_coverage=1 --ignore-errors source -
+-quiet
+
+    echo ""
+    echo "=== Coverage Summary (Package Source Only) ==="
+    lcov --summary "${coverage_file}" --rc branch_coverage=1 2>/dev/null
+
+    local full_path="$(pwd)/coverage_html/index.html"
+    echo ""
+    echo "HTML Coverage Report: $full_path"
+    echo ""
+
+    cd - > /dev/null
+  fi
+}
+
+generate_coverage() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: generate_coverage <package_name> [output_dir]"
+        echo "Example: generate_coverage ugv_themis_dead_reckoning_ros"
+        return 1
+    fi
+
+    local PACKAGE_NAME=$1
+    local OUTPUT_DIR=${2:-"${PACKAGE_NAME}_coverage"}
+
+    echo "Generating coverage for package: $PACKAGE_NAME"
+
+    # Capture coverage data with branch coverage enabled
+    lcov --capture --directory "build/$PACKAGE_NAME" --output-file coverage.info \
+         --ignore-errors mismatch,negative,empty \
+         --rc branch_coverage=1
+
+    # Extract coverage for the specific package source files
+    lcov --extract coverage.info "*/src/*/$PACKAGE_NAME/src/*" \
+         --output-file "${PACKAGE_NAME}_coverage.info" \
+         --rc branch_coverage=1
+
+    # Generate HTML report with branch coverage enabled
+    genhtml "${PACKAGE_NAME}_coverage.info" --output-directory "$OUTPUT_DIR" \
+            --rc branch_coverage=1
+
+    echo "Coverage report generated at: file:$(pwd)/$OUTPUT_DIR/index.html"
+    echo "Coverage summary:"
+    lcov --summary "${PACKAGE_NAME}_coverage.info" --rc branch_coverage=1
 }
 
 # alias xbuild="catkin build -DCMAKE_BUILD_TYPE=Release -c"
@@ -188,24 +561,99 @@ xfixdrivers() {
         echo "✅ Mesa update complete!"
 }
 
- 
+
 xinstallnvm() {
   echo "=> Installing nvm..."
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
- 
+
   echo "=> Reloading shell config..."
   export NVM_DIR="$HOME/.nvm"
   [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
   [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
- 
+
   echo "=> Installing latest LTS Node.js..."
   nvm install --lts
- 
+
   echo "=> Verifying installation..."
   node --version
   npm --version
- 
-  npm i -g opencode-ai
- 
+
+  # npm i -g opencode-ai
+
   echo "✅ Done! nvm and Node.js LTS are installed."
 }
+
+alias xcoverage='generate_coverage() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: xcoverage <package_name> [output_dir]"
+        echo "Example: xcoverage ros_utils"
+        return 1
+    fi
+    local pkg="$1"
+    local output_dir="${2:-${pkg}_coverage}"
+    
+    echo "🔧 Building $pkg with coverage flags..."
+    colcon build --base-paths src --symlink-install --packages-select "$pkg" \
+        --cmake-args \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCATKIN_ENABLE_TESTING=ON \
+            "-DCMAKE_CXX_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+            "-DCMAKE_C_FLAGS=-O0 -g -fprofile-arcs -ftest-coverage" \
+            "-DCMAKE_EXE_LINKER_FLAGS=-lgcov" && \
+    
+    echo "🧪 Running tests for $pkg..."
+    colcon test --base-paths src --packages-select "$pkg" && \
+    script -q -c "colcon test-result --verbose --all" /dev/null
+    if [ $? -eq 0 ]; then
+        echo "📊 Generating coverage report..."
+        local build_dir="build/$pkg"
+        if ! command -v lcov &> /dev/null; then
+            echo "❌ ERROR: lcov not installed. Install with: sudo apt-get install lcov"
+            return 1
+        fi
+        cd "$build_dir" || return 1
+        # Capture coverage data
+        lcov --capture --directory . --output-file coverage.info \
+            --rc branch_coverage=1 \
+            --ignore-errors mismatch,unused,gcov \
+            --quiet
+        # Filter out system and test files
+        lcov --remove coverage.info \
+            "/usr/*" "/opt/*" "*/test/*" "*/gtest/*" "*/_deps/*" "*/build/*" "*/install/*" \
+            --output-file coverage_filtered.info \
+            --rc branch_coverage=1 \
+            --ignore-errors unused,empty \
+            --quiet
+        # Extract only source files from the current package
+        local workspace_root="$(cd ../.. && pwd)"
+        local src_pattern="${workspace_root}/src/**/${pkg}/*"
+        lcov --extract coverage_filtered.info "$src_pattern" \
+            --output-file coverage_pkg_only.info \
+            --rc branch_coverage=1 \
+            --ignore-errors unused,empty \
+            --quiet
+        # Use package-only coverage if available
+        local coverage_file="coverage_filtered.info"
+        if [ -f coverage_pkg_only.info ] && [ -s coverage_pkg_only.info ]; then
+            coverage_file="coverage_pkg_only.info"
+            echo "✅ Using package-only coverage data"
+        fi
+        # Generate HTML report
+        genhtml "$coverage_file" \
+            --output-directory "$output_dir" \
+            --rc branch_coverage=1 \
+            --ignore-errors source \
+            --quiet
+        echo ""
+        echo "📈 Coverage Summary:"
+        lcov --summary "$coverage_file" --rc branch_coverage=1 2>/dev/null
+        local full_path="$(pwd)/$output_dir/index.html"
+        echo ""
+        echo "🌐 HTML Coverage Report: file://$full_path"
+        echo ""
+        cd - > /dev/null
+    else
+        echo "❌ Tests failed for $pkg - coverage generation aborted"
+        return 1
+    fi
+}; generate_coverage'
