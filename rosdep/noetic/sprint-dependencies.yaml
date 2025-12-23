@@ -40,3 +40,5 @@ ugv_trailer_pose_estimation:
   ubuntu: [ros-noetic-ugv-trailer-pose-estimation]
 ugv_ompl_path_planner:
   ubuntu: [ros-noetic-ugv-ompl-path-planner]
+robot_localization:
+  ubuntu: [ros-noetic-robot-localization]
